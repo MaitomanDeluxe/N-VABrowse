@@ -110,7 +110,7 @@
             
             <div class="url-container">
                 <span class="material-symbols-outlined tune-icon">tune</span>
-                <input type="text" class="url-input" id="url-input" spellcheck="false" autocomplete="off" placeholder="Bing で検索または URL を入力">
+                <input type="text" class="url-input" id="url-input" spellcheck="false" autocomplete="off" placeholder="Web を検索または URL を入力">
             </div>
             
             <div class="ext-zone" id="ext-zone">
@@ -128,8 +128,8 @@
 
         <div class="devtools" id="devtools">
             <div class="dt-header">
-                <div class="dt-tab active" onclick="switchDtTab('dt-console')">コンソール</div>
-                <div class="dt-tab" onclick="switchDtTab('dt-network')">ネットワーク</div>
+                <div class="dt-tab active" onclick="switchDtTab(event, 'dt-console')">コンソール</div>
+                <div class="dt-tab" onclick="switchDtTab(event, 'dt-network')">ネットワーク</div>
                 <div style="flex:1;"></div>
                 <button class="icon-btn" onclick="toggleDevTools()"><span class="material-symbols-outlined" style="font-size:18px;">close</span></button>
             </div>
@@ -184,8 +184,6 @@
     </div>
 
     <script>
-        // --- NØVA Homepage (srcdoc用 HTML生成) ---
-        // ダークでクールな背景画像と、中央の検索ボックスを配置
         const getNovaHomeHTML = (themeColor) => `
         <!DOCTYPE html>
         <html lang="ja">
@@ -201,7 +199,6 @@
                 .shortcuts { display: flex; gap: 20px; margin-top: 40px; }
                 .shortcut { width: 50px; height: 50px; background: rgba(255,255,255,0.1); backdrop-filter: blur(5px); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; border: 1px solid rgba(255,255,255,0.05); }
                 .shortcut:hover { background: ${themeColor}; transform: translateY(-3px); }
-                .shortcut img { width: 24px; height: 24px; filter: invert(1); }
             </style>
         </head>
         <body>
@@ -220,22 +217,20 @@
                 </div>
             </div>
             <script>
-                // 検索バーでEnterを押したら、親ウィンドウ（NØVA本体）にメッセージを送る
                 document.getElementById('searchInput').addEventListener('keydown', (e) => {
                     if(e.key === 'Enter' && e.target.value) {
                         window.parent.postMessage({ type: 'search', query: e.target.value }, '*');
                     }
                 });
-            </script>
+            <\/script>
         </body>
         </html>
         `;
 
-        // --- コアシステム ---
         let tabs = [];
         let activeTabId = null;
         let tabCounter = 0;
-        let isZapping = false; // 要素非表示モードフラグ
+        let isZapping = false;
 
         function createId() { return 'tab-' + (++tabCounter); }
 
@@ -246,7 +241,7 @@
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
             tabEl.id = `ui-${id}`;
-            tabEl.innerHTML = `<span class="material-symbols-outlined tab-icon" style="font-size:16px;">public</span> <span class="tab-title">NØVA Home</span> <div class="tab-close" onclick="closeTab('${id}', event)"><span class="material-symbols-outlined" style="font-size:14px;">close</span></div>`;
+            tabEl.innerHTML = `<span class="material-symbols-outlined tab-icon">public</span> <span class="tab-title">NØVA Home</span> <div class="tab-close" onclick="closeTab('${id}', event)"><span class="material-symbols-outlined" style="font-size:14px;">close</span></div>`;
             tabEl.onclick = () => switchTab(id);
             document.getElementById('tab-bar').appendChild(tabEl);
 
@@ -259,6 +254,20 @@
             switchTab(id);
         }
 
+        // 入力値がURLか検索ワードかを判定する機能の強化
+        function parseUrl(input) {
+            input = input.trim();
+            if (input === 'nova://home') return input;
+            if (/^https?:\/\//i.test(input)) return input;
+            // "example.com" のようなドメイン形式の場合は http:// を付与
+            if (/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\/.*)?$/.test(input)) return 'https://' + input;
+            
+            const engine = document.getElementById('search-engine').value;
+            if(engine === 'google') return `https://www.google.com/search?q=${encodeURIComponent(input)}`;
+            if(engine === 'duckduckgo') return `https://duckduckgo.com/?q=${encodeURIComponent(input)}`;
+            return `https://www.bing.com/search?q=${encodeURIComponent(input)}`;
+        }
+
         function loadUrlIntoTab(id, rawUrl) {
             const iframe = document.getElementById(`frame-${id}`);
             const tabData = tabs.find(t => t.id === id);
@@ -267,27 +276,19 @@
                 tabData.url = 'nova://home';
                 tabData.title = 'NØVA Home';
                 const themeColor = getComputedStyle(document.documentElement).getPropertyValue('--md-primary').trim();
+                iframe.removeAttribute('src');
                 iframe.srcdoc = getNovaHomeHTML(themeColor);
-                iframe.src = '';
             } else {
-                let finalUrl = rawUrl;
-                // 検索クエリの判定 (httpから始まらない場合)
-                if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
-                    const engine = document.getElementById('search-engine').value;
-                    if(engine === 'google') finalUrl = `https://www.google.com/search?q=${encodeURIComponent(finalUrl)}`;
-                    else if(engine === 'duckduckgo') finalUrl = `https://duckduckgo.com/?q=${encodeURIComponent(finalUrl)}`;
-                    else finalUrl = `https://www.bing.com/search?q=${encodeURIComponent(finalUrl)}`;
-                }
+                let finalUrl = parseUrl(rawUrl);
                 
-                // プロキシが有効な場合
                 const proxy = document.getElementById('proxy-mode').value;
                 if (proxy && !finalUrl.startsWith('nova://')) {
                     finalUrl = proxy + encodeURIComponent(finalUrl);
                     addNewConsoleLog(`Proxyを使用しています: ${finalUrl}`, 'warn');
                 }
 
-                tabData.url = rawUrl; // 表示用は元のURL
-                iframe.srcdoc = '';
+                tabData.url = rawUrl; 
+                iframe.removeAttribute('srcdoc'); // 競合を防ぐためにsrcdocを削除
                 iframe.src = finalUrl;
             }
             logNetwork(tabData.url, 200);
@@ -299,28 +300,30 @@
             
             if(tabData.url === 'nova://home') {
                 document.querySelector(`#ui-${id} .tab-title`).innerText = "NØVA Home";
-                setupZapperForIframe(iframe); // Home画面にはZapperのイベントを注入可能
+                setupZapperForIframe(iframe);
             } else {
                 try {
                     const title = iframe.contentDocument.title;
                     if(title) document.querySelector(`#ui-${id} .tab-title`).innerText = title;
-                    setupZapperForIframe(iframe); // 同一オリジンなら成功する
+                    setupZapperForIframe(iframe); 
                 } catch(e) {
-                    // CORS制限でアクセス不可の場合
-                    let displayTitle = tabData.url;
-                    if(displayTitle.includes('google.com/search')) displayTitle = decodeURIComponent(displayTitle.split('q=')[1].split('&')[0]) + " - Google 検索";
-                    else if(displayTitle.includes('bing.com/search')) displayTitle = decodeURIComponent(displayTitle.split('q=')[1].split('&')[0]) + " - Bing 検索";
-                    document.querySelector(`#ui-${id} .tab-title`).innerText = displayTitle;
+                    try {
+                        let displayTitle = tabData.url;
+                        if(displayTitle.includes('google.com/search')) displayTitle = decodeURIComponent(displayTitle.split('q=')[1].split('&')[0]) + " - Google 検索";
+                        else if(displayTitle.includes('bing.com/search')) displayTitle = decodeURIComponent(displayTitle.split('q=')[1].split('&')[0]) + " - Bing 検索";
+                        document.querySelector(`#ui-${id} .tab-title`).innerText = displayTitle;
+                    } catch(err) {
+                        document.querySelector(`#ui-${id} .tab-title`).innerText = tabData.url;
+                    }
                     
                     if(isZapping) {
                         addNewConsoleLog(`[Zapper] CORS制限により、外部サイト(${tabData.url})の要素は操作できません。`, 'error');
-                        toggleZapper(); // 制限につきオフにする
+                        toggleZapper(); 
                     }
                 }
             }
         }
 
-        // ホーム画面(iframe内)からの検索イベント受け取り
         window.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'search') {
                 document.getElementById('url-input').value = event.data.query;
@@ -338,7 +341,6 @@
             const tabData = tabs.find(t => t.id === id);
             document.getElementById('url-input').value = (tabData.url === 'nova://home') ? '' : tabData.url;
             
-            // タブを切り替えたらZapperは一旦解除
             if(isZapping) toggleZapper();
         }
 
@@ -349,13 +351,12 @@
             tabs = tabs.filter(t => t.id !== id);
             
             if (tabs.length === 0) {
-                addTab(); // 全部消えたらHomeを新規作成
+                addTab();
             } else if (activeTabId === id) {
                 switchTab(tabs[tabs.length - 1].id);
             }
         }
 
-        // URLバー入力
         document.getElementById('url-input').addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && e.target.value.trim() !== '') {
                 loadUrlIntoTab(activeTabId, e.target.value.trim());
@@ -364,8 +365,9 @@
         });
 
         function navBack() { 
+            const tabData = tabs.find(t=>t.id===activeTabId);
+            if(tabData && tabData.url === 'nova://home') return;
             const iframe = document.getElementById(`frame-${activeTabId}`);
-            if(tabs.find(t=>t.id===activeTabId).url === 'nova://home') return;
             try { iframe.contentWindow.history.back(); } catch(e) { addNewConsoleLog('CORS Policy: 履歴操作ブロック', 'error'); }
         }
         function navForward() { 
@@ -376,7 +378,6 @@
             loadUrlIntoTab(activeTabId, tabData.url);
         }
 
-        // --- Safari風 要素非表示ツール (Element Zapper) ---
         function toggleZapper() {
             isZapping = !isZapping;
             const btn = document.getElementById('btn-zapper');
@@ -393,16 +394,12 @@
             }
         }
 
-        // iframe内にZapperのロジックを注入 (同一オリジン/srcdocのみ可能)
         function setupZapperForIframe(iframe) {
             try {
                 const doc = iframe.contentDocument;
-                
-                // 既に登録されていればスキップ
                 if(doc.body.dataset.zapperInit) return;
                 doc.body.dataset.zapperInit = "true";
 
-                // ホバー時のハイライトCSSを注入
                 const style = doc.createElement('style');
                 style.innerHTML = `
                     .nova-zapper-hover { outline: 2px dashed #ff0055 !important; background-color: rgba(255,0,85,0.2) !important; cursor: crosshair !important; transition: all 0.1s !important; }
@@ -435,27 +432,22 @@
                         addNewConsoleLog(`[Zapper] 要素を非表示にしました: <${hoveredEl.tagName.toLowerCase()}>`);
                     }
                 }, true);
-
-            } catch(e) {
-                // CORSでブロックされた場合は何もしない
-            }
+            } catch(e) { }
         }
 
-        // EscキーでZapper解除
         document.addEventListener('keydown', (e) => {
             if(e.key === 'Escape' && isZapping) toggleZapper();
         });
 
-
-        // --- DevTools & UI 周り ---
         function toggleDevTools() {
             const dt = document.getElementById('devtools');
             dt.style.display = dt.style.display === 'flex' ? 'none' : 'flex';
         }
 
-        function switchDtTab(panelId) {
+        // e（イベント）を受け取るように修正
+        function switchDtTab(e, panelId) {
             document.querySelectorAll('.dt-tab').forEach(t => t.classList.remove('active'));
-            event.currentTarget.classList.add('active');
+            e.currentTarget.classList.add('active');
             document.querySelectorAll('.dt-panel').forEach(p => p.classList.remove('active'));
             document.getElementById(panelId).classList.add('active');
         }
@@ -491,10 +483,6 @@
 
         function updateTheme(color) {
             document.documentElement.style.setProperty('--md-primary', color);
-            document.querySelectorAll('.tab-icon').forEach(icon => {
-               if(icon.parentElement.classList.contains('active')) icon.style.color = color;
-            });
-            // Home画面を開き直して色を反映
             tabs.forEach(t => {
                 if(t.url === 'nova://home') {
                     document.getElementById(`frame-${t.id}`).srcdoc = getNovaHomeHTML(color);
@@ -508,7 +496,7 @@
         }
 
         window.onload = () => {
-            addTab(); // 起動時にHome画面を開く
+            addTab();
         };
     </script>
 </body>
